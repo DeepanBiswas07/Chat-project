@@ -3,9 +3,11 @@ require("./db");
 const express = require("express");
 const http = require("http");
 const { Server } = require("socket.io");
+const { v4: uuidv4 } = require("uuid");
 
 const User = require("./models/User");
 const Message = require("./models/Message");
+const Conversation = require("./models/Conversation");
 
 const app = express();
 const server = http.createServer(app);
@@ -14,44 +16,50 @@ const io = new Server(server, {
   cors: { origin: "*" },
 });
 
+// in-memory online users
 const users = {};
 
+// fallback old conversationId
 function getConversationId(u1, u2) {
   return [u1, u2].sort().join("_");
 }
 
-function escapeRegex(value) {
-  return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+function getUnreadValue(unreadCount, userId) {
+  if (!unreadCount) return 0;
+
+  if (typeof unreadCount.get === "function") {
+    return unreadCount.get(userId) || 0;
+  }
+
+  return unreadCount[userId] || 0;
 }
 
-function conversationMatchRegex(userId) {
-  return new RegExp(`(^|_)${escapeRegex(userId)}(_|$)`);
+function formatConversationForUser(convo, currentUserId) {
+  return {
+    conversationId: convo.conversationId,
+    participants: convo.participants,
+    lastMessage: convo.lastMessage,
+    lastMessageAt: convo.lastMessageAt,
+    unreadCount: getUnreadValue(convo.unreadCount, currentUserId),
+    createdAt: convo.createdAt,
+  };
 }
 
 io.on("connection", (socket) => {
   console.log("🟢 Connected:", socket.id);
 
-  socket.data.registeredUserId = null;
-  socket.data.registeredName = null;
+  socket.data.userId = null;
+  socket.data.name = null;
 
+  // ================= REGISTER =================
   socket.on("register", async ({ userId, name }, ack) => {
     const id = String(userId || "").trim().toLowerCase();
     const cleanName = String(name || "").trim();
 
     if (!id || !cleanName) return;
 
-    if (
-      socket.data.registeredUserId === id &&
-      socket.data.registeredName === cleanName
-    ) {
-      if (typeof ack === "function") {
-        ack({ userId: id, name: cleanName, alreadyRegistered: true });
-      }
-      return;
-    }
-
-    socket.data.registeredUserId = id;
-    socket.data.registeredName = cleanName;
+    socket.data.userId = id;
+    socket.data.name = cleanName;
 
     users[id] = {
       socketId: socket.id,
@@ -66,67 +74,68 @@ io.on("connection", (socket) => {
 
     console.log(`👤 ${cleanName} (${id})`);
 
-    io.emit(
-      "user_list",
-      Object.keys(users).map((u) => ({
-        userId: u,
-        name: users[u].name,
-      }))
-    );
+    await sendUserListToAll();
+    await sendConversationList(socket, id);
 
-    if (typeof ack === "function") {
-      ack({ userId: id, name: cleanName, alreadyRegistered: false });
+    // mark pending delivered
+    const pendingMessages = await Message.find({
+      receiverId: id,
+      status: "sent",
+    });
+
+    for (const msg of pendingMessages) {
+      msg.status = "delivered";
+      msg.deliveredAt = new Date();
+      await msg.save();
+
+      if (users[msg.senderId]) {
+        io.to(users[msg.senderId].socketId).emit("message_status", {
+          messageId: msg.messageId,
+          clientId: msg.clientId,
+          status: "delivered",
+        });
+      }
     }
+
+    ack && ack({ userId: id, name: cleanName });
   });
 
-  socket.on("get_users", () => {
-    socket.emit(
-      "user_list",
-      Object.keys(users).map((u) => ({
-        userId: u,
-        name: users[u].name,
-      }))
-    );
+  // ================= GET USERS =================
+  socket.on("get_users", async () => {
+    const userId = socket.data.userId;
+    if (!userId) return;
+
+    await sendUserList(socket, userId);
   });
 
+  // ================= CREATE CONVERSATION =================
+  socket.on("create_conversation", async ({ from, to }, ack) => {
+    const fromId = String(from || "").trim().toLowerCase();
+    const toId = String(to || "").trim().toLowerCase();
+
+    if (!fromId || !toId) return;
+
+    const convo = {
+      conversationId: uuidv4(),
+      participants: [fromId, toId],
+      createdBy: fromId,
+      createdAt: new Date(),
+    };
+
+    ack && ack(convo);
+  });
+
+  // ================= GET CONVERSATIONS =================
   socket.on("get_conversations", async ({ userId }) => {
     const id = String(userId || "").trim().toLowerCase();
 
-    if (!id) {
-      socket.emit("conversation_list", []);
-      return;
-    }
+    if (!id) return;
 
-    const messages = await Message.find({
-      conversationId: conversationMatchRegex(id),
-    }).sort({ timestamp: 1 });
-
-    const otherIds = [
-      ...new Set(
-        messages.flatMap((m) =>
-          String(m.conversationId)
-            .split("_")
-            .filter((part) => part && part !== id)
-        )
-      ),
-    ];
-
-    const foundUsers = await User.find({
-      userId: { $in: otherIds },
-    }).lean();
-
-    const nameMap = new Map(foundUsers.map((u) => [u.userId, u.name]));
-
-    socket.emit(
-      "conversation_list",
-      otherIds.map((otherId) => ({
-        userId: otherId,
-        name: nameMap.get(otherId) || otherId,
-      }))
-    );
+    await sendConversationList(socket, id);
   });
 
-  socket.on("send_message", async ({ from, to, message, clientId }, ack) => {
+  // ================= SEND MESSAGE =================
+  socket.on("send_message", async ({ from, to, message, clientId, conversationId }, ack) => {
     const fromId = String(from || "").trim().toLowerCase();
     const toId = String(to || "").trim().toLowerCase();
     const text = String(message || "").trim();
@@ -134,89 +143,282 @@ io.on("connection", (socket) => {
 
     if (!fromId || !toId || !text) return;
 
-    const convId = getConversationId(fromId, toId);
+    // 🔥 use new OR fallback
+    let convId = conversationId;
+
+    if (!convId) {
+      convId = getConversationId(fromId, toId);
+    }
 
     let msg = await Message.findOne({
-      conversationId: convId,
+      senderId: fromId,
       clientId: safeClientId,
     });
+
+    const isNewMessage = !msg;
 
     if (!msg) {
       msg = await Message.create({
         conversationId: convId,
-        sender: fromId,
+        senderId: fromId,
+        receiverId: toId,
         text,
         clientId: safeClientId,
-        delivered: false,
-        pushedToReceiver: false,
-        timestamp: new Date(),
+        status: "sent",
+        sentAt: new Date(),
       });
     }
 
-    let deliveredNow = false;
+    const conversationUpdate = {
+      $set: {
+        lastMessage: text,
+        lastMessageAt: new Date(),
+      },
+      $setOnInsert: {
+        conversationId: convId,
+        participants: [fromId, toId],
+        createdBy: fromId,
+        createdAt: new Date(),
+      },
+    };
 
-    if (!msg.pushedToReceiver && users[toId]) {
-      io.to(users[toId].socketId).emit("receive_message", {
-        ...msg.toObject(),
-        fromName: users[fromId]?.name || fromId,
-      });
-
-      msg.pushedToReceiver = true;
+    if (isNewMessage) {
+      conversationUpdate.$inc = {
+        [`unreadCount.${toId}`]: 1,
+      };
     }
 
-    if (!msg.delivered && users[toId] && users[fromId]) {
-      msg.delivered = true;
-      deliveredNow = true;
+    await Conversation.findOneAndUpdate(
+      { conversationId: convId },
+      conversationUpdate,
+      { upsert: true }
+    );
 
-      io.to(users[fromId].socketId).emit("message_delivered", {
-        clientId: safeClientId,
-      });
+    // deliver if online
+    if (users[toId]) {
+      io.to(users[toId].socketId).emit("receive_message", msg);
+
+      msg.status = "delivered";
+      msg.deliveredAt = new Date();
+
+      if (users[fromId]) {
+        io.to(users[fromId].socketId).emit("message_status", {
+          messageId: msg.messageId,
+          clientId: safeClientId,
+          status: "delivered",
+        });
+      }
     }
 
     await msg.save();
 
-    if (typeof ack === "function") {
-      ack({
-        ...msg.toObject(),
-        deliveredNow,
-      });
-    }
+    await sendUserListToAll();
+    await sendConversationListToUser(fromId);
+    await sendConversationListToUser(toId);
+
+    ack && ack(msg);
   });
 
-  socket.on("load_messages", async ({ user1, user2 }) => {
-    const u1 = String(user1 || "").trim().toLowerCase();
-    const u2 = String(user2 || "").trim().toLowerCase();
+  // ================= LOAD CHAT =================
+  socket.on("load_messages", async ({ user1, user2, conversationId }) => {
+    let convId;
 
-    if (!u1 || !u2) {
-      socket.emit("chat_history", []);
-      return;
+    if (conversationId) {
+      convId = conversationId;
+    } else {
+      const u1 = String(user1 || "").trim().toLowerCase();
+      const u2 = String(user2 || "").trim().toLowerCase();
+
+      if (!u1 || !u2) {
+        socket.emit("chat_history", []);
+        return;
+      }
+
+      convId = getConversationId(u1, u2);
     }
 
-    const convId = getConversationId(u1, u2);
-
-    const msgs = await Message.find({ conversationId: convId }).sort({
-      timestamp: 1,
-    });
+    const msgs = await Message.find({
+      conversationId: convId,
+    }).sort({ createdAt: 1 });
 
     socket.emit("chat_history", msgs);
   });
 
-  socket.on("disconnect", () => {
+  // ================= READ =================
+  socket.on("message_read", async ({ messageId }) => {
+    const msg = await Message.findOneAndUpdate(
+      { messageId },
+      {
+        status: "read",
+        readAt: new Date(),
+      },
+      { returnDocument: "after" }
+    );
+
+    if (!msg) return;
+
+    const readerId = socket.data.userId || msg.receiverId;
+
+    await Conversation.findOneAndUpdate(
+      { conversationId: msg.conversationId },
+      {
+        $set: {
+          [`unreadCount.${readerId}`]: 0,
+        },
+      }
+    );
+
+    if (users[msg.senderId]) {
+      io.to(users[msg.senderId].socketId).emit("message_status", {
+        messageId,
+        clientId: msg.clientId,
+        status: "read",
+      });
+    }
+
+    await sendUserListToUser(readerId);
+    await sendConversationListToUser(readerId);
+    await sendConversationListToUser(msg.senderId);
+  });
+
+  // ================= DISCONNECT =================
+  socket.on("disconnect", async () => {
+    let disconnectedUser = null;
+
     for (const id in users) {
       if (users[id].socketId === socket.id) {
+        disconnectedUser = id;
         delete users[id];
       }
     }
 
-    io.emit(
-      "user_list",
-      Object.keys(users).map((u) => ({
-        userId: u,
-        name: users[u].name,
-      }))
-    );
+    console.log("🔴 Disconnected:", socket.id);
+
+    if (disconnectedUser) {
+      await sendUserListToAll();
+    }
   });
 });
+
+
+// ================= USER LIST LOGIC =================
+async function sendUserList(socket, currentUserId) {
+  const conversations = await Conversation.find({
+    participants: currentUserId,
+  }).lean();
+
+  const chattedUserIds = new Set();
+  const userUnread = {};
+
+  conversations.forEach((convo) => {
+    const unread = getUnreadValue(convo.unreadCount, currentUserId);
+
+    convo.participants.forEach((participantId) => {
+      if (participantId === currentUserId) return;
+
+      chattedUserIds.add(participantId);
+      userUnread[participantId] = (userUnread[participantId] || 0) + unread;
+    });
+  });
+
+  // Backward compatibility for older chats that only have messages.
+  const fallbackMessages = await Message.find({
+    $or: [
+      { senderId: currentUserId },
+      { receiverId: currentUserId },
+    ],
+  })
+    .select("senderId receiverId")
+    .lean();
+
+  fallbackMessages.forEach((m) => {
+    if (m.senderId !== currentUserId) chattedUserIds.add(m.senderId);
+    if (m.receiverId !== currentUserId) chattedUserIds.add(m.receiverId);
+  });
+
+  // ALL ONLINE USERS
+  const onlineUsers = Object.keys(users)
+    .filter((id) => id !== currentUserId)
+    .map((id) => ({
+      userId: id,
+      name: users[id].name,
+      online: true,
+      unreadCount: userUnread[id] || 0,
+    }));
+
+  // CHATTED USERS
+  const chattedUsers = await User.find({
+    userId: { $in: [...chattedUserIds] },
+  }).lean();
+
+  const offlineUsers = chattedUsers
+    .filter((u) => !users[u.userId] && u.userId !== currentUserId)
+    .map((u) => ({
+      userId: u.userId,
+      name: u.name,
+      online: false,
+      unreadCount: userUnread[u.userId] || 0,
+    }));
+
+  const result = [...onlineUsers, ...offlineUsers];
+
+  socket.emit("user_list", result);
+}
+
+async function sendUserListToUser(userId) {
+  if (!users[userId]) return;
+
+  const socket = io.sockets.sockets.get(users[userId].socketId);
+
+  if (socket) {
+    await sendUserList(socket, userId);
+  }
+}
+
+async function sendConversationList(socket, currentUserId) {
+  await Conversation.deleteMany({
+    participants: currentUserId,
+    $or: [
+      { lastMessage: { $exists: false } },
+      { lastMessage: null },
+      { lastMessage: "" },
+    ],
+  });
+
+  const convos = await Conversation.find({
+    participants: currentUserId,
+  })
+    .sort({ lastMessageAt: -1 })
+    .lean();
+
+  socket.emit(
+    "conversation_list",
+    convos.map((convo) => formatConversationForUser(convo, currentUserId))
+  );
+}
+
+async function sendConversationListToUser(userId) {
+  if (!users[userId]) return;
+
+  const socket = io.sockets.sockets.get(users[userId].socketId);
+
+  if (socket) {
+    await sendConversationList(socket, userId);
+  }
+}
+
+
+// broadcast
+async function sendUserListToAll() {
+  for (const userId in users) {
+    const socketId = users[userId].socketId;
+    const socket = io.sockets.sockets.get(socketId);
+
+    if (socket) {
+      await sendUserList(socket, userId);
+    }
+  }
+}
 
 server.listen(3000, "0.0.0.0", () => {
   console.log("🚀 Server running");
