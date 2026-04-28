@@ -71,10 +71,10 @@ http://0.0.0.0:3000
 The client currently connects to the server from `client-test/index.html` using:
 
 ```js
-const socket = io("http://192.168.10.215:3000");
+const socket = io("http://192.168.x.x:3000");
 ```
 
-Update this URL if your server IP address changes.
+Change URL to your server IP address.
 
 ## Running the Client
 
