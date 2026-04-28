@@ -135,7 +135,6 @@ The MongoDB connection is configured in:
 server/db.js
 ```
 
-Before pushing this project to a public Git repository, move any database credentials into environment variables and avoid committing secrets.
 
 ## Development Notes
 
