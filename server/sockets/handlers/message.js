@@ -1,83 +1,90 @@
-const { getUser } = require("../../store/onlineUsers");
-const { isValidEncryptedPayload } = require("../../utils/validation");
+"use strict";
+
+const { getUser }                                         = require("../../store/onlineUsers");
+const { isValidEncryptedPayload }                         = require("../../utils/validation");
 const { findMessage, createMessage, getMessages, markMessageRead } = require("../../services/message");
-const { upsertSession, resetUnread } = require("../../services/session");
+const { createOrUpdateSession, resetUnread }              = require("../../services/session");
+const { messageLimiter }                                  = require("../../middleware/socketRateLimit");
 
 function getSessionId(u1, u2) {
   return [u1, u2].sort().join("_");
 }
 
 function formatMessageForClient(msg) {
-  const payload = {
-    messageId: msg.messageId,
-    sessionId: msg.sessionId,
-    senderId: msg.senderId,
-    receiverId: msg.receiverId,
+  return {
+    messageId:        msg.messageId,
+    sessionId:        msg.sessionId,
+    senderId:         msg.senderId,
+    receiverId:       msg.receiverId,
     encryptedmessage: msg.encryptedmessage,
-    nonce: msg.nonce,
-    header: msg.header,
-    version: msg.version,
-    clientId: msg.clientId,
-    status: msg.status,
-    createdAt: msg.createdAt,
-    sentAt: msg.sentAt,
-    deliveredAt: msg.deliveredAt,
-    readAt: msg.readAt,
+    nonce:            msg.nonce,
+    header:           msg.header,
+    version:          msg.version,
+    clientId:         msg.clientId,
+    status:           msg.status,
+    createdAt:        msg.createdAt,
+    sentAt:           msg.sentAt,
+    deliveredAt:      msg.deliveredAt,
+    readAt:           msg.readAt,
   };
-  return payload;
 }
 
 module.exports = function registerMessageHandler(socket, io, helpers) {
   const { sendUserListToAll, sendUserListToUser, sendSessionListToUser } = helpers;
 
-  // ================= SEND MESSAGE =================
-  socket.on("send_message", async ({ to, sessionId, encryptedmessage, nonce, header, clientId, lastMessagePreview }, ack) => {
+  socket.on("send_message", async (payload, ack) => {
     try {
-      const fromId = socket.data.userId;
-      const toId = String(to || "").trim().toLowerCase();
-      const safeEncryptedMessage = String(encryptedmessage || "").trim();
-      const safeNonce = String(nonce || "").trim();
-      const safeHeader = header ? String(header).trim() : "";
-      const safeClientId = String(clientId || Date.now().toString());
+      if (!messageLimiter(socket, ack)) return;
 
+      const fromId = socket.data.userId; // always from server, never payload
       if (!fromId) { ack && ack({ error: "Unauthorized" }); return; }
-      if (!toId) { ack && ack({ error: "Invalid receiver" }); return; }
+
+      const raw = payload && typeof payload === "object" ? payload : {};
+
+      const toId               = String(raw.to               || "").trim().toLowerCase();
+      const safeEncryptedMessage = String(raw.encryptedmessage || "").trim();
+      const safeNonce          = String(raw.nonce             || "").trim();
+      const safeHeader         = raw.header ? String(raw.header).trim() : "";
+      const safeClientId       = String(raw.clientId         || Date.now().toString()).slice(0, 128);
+      const sessionId          = raw.sessionId ? String(raw.sessionId).trim() : null;
+
+      if (!toId)          { ack && ack({ error: "Invalid receiver" }); return; }
+      if (fromId === toId) { ack && ack({ error: "Cannot message yourself" }); return; }
 
       if (!isValidEncryptedPayload({ encryptedmessage: safeEncryptedMessage, nonce: safeNonce, header: safeHeader })) {
         ack && ack({ error: "Invalid encrypted payload" });
         return;
       }
 
-      let convId = sessionId || getSessionId(fromId, toId);
+      const convId = sessionId || getSessionId(fromId, toId);
 
       let msg = await findMessage(fromId, safeClientId);
-      const isNewMessage = !msg;
+      const isNew = !msg;
 
       if (!msg) {
         msg = await createMessage({
-          sessionId: convId,
-          senderId: fromId,
-          receiverId: toId,
+          sessionId:        convId,
+          senderId:         fromId,
+          receiverId:       toId,
           encryptedmessage: safeEncryptedMessage,
-          nonce: safeNonce,
-          header: safeHeader,
-          clientId: safeClientId,
-          status: "sent",
-          sentAt: new Date(),
+          nonce:            safeNonce,
+          header:           safeHeader,
+          clientId:         safeClientId,
+          status:           "sent",
+          sentAt:           new Date(),
         });
       }
 
-      await upsertSession(convId, fromId, toId, {
+      await createOrUpdateSession(convId, fromId, toId, {
         ciphertext: safeEncryptedMessage,
-        nonce: safeNonce,
-        header: safeHeader,
-      }, isNewMessage);
+        nonce:      safeNonce,
+        header:     safeHeader,
+      }, isNew);
 
       const recipient = getUser(toId);
       if (recipient) {
         io.to(recipient.socketId).emit("receive_message", formatMessageForClient(msg));
-
-        msg.status = "delivered";
+        msg.status      = "delivered";
         msg.deliveredAt = new Date();
         await msg.save();
 
@@ -85,8 +92,8 @@ module.exports = function registerMessageHandler(socket, io, helpers) {
         if (sender) {
           io.to(sender.socketId).emit("message_status", {
             messageId: msg.messageId,
-            clientId: safeClientId,
-            status: "delivered",
+            clientId:  safeClientId,
+            status:    "delivered",
           });
         }
       }
@@ -102,19 +109,23 @@ module.exports = function registerMessageHandler(socket, io, helpers) {
     }
   });
 
-  // ================= LOAD CHAT =================
-  socket.on("load_messages", async ({ user2, sessionId }) => {
+  socket.on("load_messages", async (payload) => {
     try {
-      const u1 = socket.data.userId;
+      const u1  = socket.data.userId;
+      if (!u1) return;
+
+      const raw = payload && typeof payload === "object" ? payload : {};
       let convId;
 
-      if (sessionId) {
-        convId = sessionId;
+      if (raw.sessionId) {
+        convId = String(raw.sessionId).trim();
       } else {
-        const u2 = String(user2 || "").trim().toLowerCase();
-        if (!u1 || !u2) { socket.emit("chat_history", []); return; }
+        const u2 = String(raw.user2 || "").trim().toLowerCase();
+        if (!u2) { socket.emit("chat_history", []); return; }
         convId = getSessionId(u1, u2);
       }
+
+      if (!convId) { socket.emit("chat_history", []); return; }
 
       const msgs = await getMessages(convId);
       socket.emit("chat_history", msgs.map(formatMessageForClient));
@@ -124,11 +135,14 @@ module.exports = function registerMessageHandler(socket, io, helpers) {
     }
   });
 
-  // ================= READ =================
-  socket.on("message_read", async ({ messageId }) => {
+  socket.on("message_read", async (payload) => {
     try {
       const readerId = socket.data.userId;
       if (!readerId) return;
+
+      const raw       = payload && typeof payload === "object" ? payload : {};
+      const messageId = String(raw.messageId || "").trim();
+      if (!messageId) return;
 
       const msg = await markMessageRead(messageId, readerId);
       if (!msg) return;
@@ -137,11 +151,7 @@ module.exports = function registerMessageHandler(socket, io, helpers) {
 
       const sender = getUser(msg.senderId);
       if (sender) {
-        io.to(sender.socketId).emit("message_status", {
-          messageId,
-          clientId: msg.clientId,
-          status: "read",
-        });
+        io.to(sender.socketId).emit("message_status", { messageId, clientId: msg.clientId, status: "read" });
       }
 
       await sendUserListToUser(readerId);

@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <title>Chat UI</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <script src="/env.js"></script>
 
   <style>
     body {
@@ -355,6 +356,19 @@ function base64ToUtf8(base64) {
   return new TextDecoder().decode(bytes);
 }
 
+
+async function apiFetch(url, options = {}) {
+  const token = sessionStorage.getItem("testJwtToken");
+  const headers = {
+    "Content-Type": "application/json",
+    ...(options.headers || {})
+  };
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
+  }
+  return fetch(url, { ...options, headers });
+}
+
 function mockEncrypt(text) {
   return {
     encryptedmessage: utf8ToBase64(text),
@@ -383,13 +397,26 @@ function generateMockKeys() {
   };
 }
 
-let socket = io("http://192.168.29.93:3000", {
-  autoConnect: true,
+// Socket is created WITHOUT autoConnect so we can set the auth token first.
+// Token is attached in join() before socket.connect() is called.
+let socket = io(window.ENV?.SERVER_URL || undefined, {
+  autoConnect: false,
   reconnection: true,
   reconnectionAttempts: Infinity,
   reconnectionDelay: 1000,
   reconnectionDelayMax: 5000,
   timeout: 20000
+});
+
+// Handle auth rejection from server
+socket.on("connect_error", (err) => {
+  if (err.message === "UNAUTHORIZED") {
+    console.error("Socket auth failed:", err.data?.message);
+    alert("Authentication failed. Please log in again.");
+    socket.disconnect();
+    sessionStorage.clear();
+    showScreen("loginScreen", false);
+  }
 });
 
 function initializeAfterConnect() {
@@ -401,20 +428,23 @@ function initializeAfterConnect() {
     return;
   }
 
+  // Restore JWT from sessionStorage on page reload / reconnect
+  if (!socket.auth || !socket.auth.token) {
+    const storedToken = sessionStorage.getItem("testJwtToken");
+    if (storedToken) {
+      socket.auth = { token: storedToken };
+    }
+  }
+
   console.log("Initializing user after connect:", currentUser);
 
-  socket.emit("register", { name: currentUser }, (res) => {
+  socket.emit("register", {}, (res) => {
     const ok = res && !res.error;
-    // Also treat "already logged in" as success — belt-and-suspenders
-    // for the race where old socket isn't cleaned up yet
-    const alreadyOnline = res && res.error === "User already logged in";
-
-    if (ok || alreadyOnline) {
-      if (ok) console.log("Registered:", res.userId);
-      if (alreadyOnline) console.log("Already registered — syncing state anyway");
+    if (ok) {
+      console.log("Registered:", res.userId);
 
       socket.emit("get_users");
-      socket.emit("get_sessions", { userId: currentUser });
+      socket.emit("get_sessions"); // server uses socket.data.userId, no payload needed
 
       if (currentSessionId) {
         setTimeout(() => {
@@ -470,25 +500,15 @@ socket.on("disconnect", () => {
 });
 
 socket.on("connect", () => {
-
   console.log("Connected:", socket.id);
-  console.log("Socket connected");
-
-  setTimeout(() => {
-    socket.emit("get_users");
-  }, 500);
 
   setTimeout(() => {
     initializeAfterConnect();
-
-    // reconnect complete AFTER state sync delay
     setTimeout(() => {
       isReconnecting = false;
       console.log("Reconnect sync complete");
     }, 1500);
-
   }, 300);
-
 });
 
 socket.io.on("reconnect_attempt", () => {
@@ -596,37 +616,63 @@ function showScreen(id, push = true) {
 }
 
 // ================= JOIN =================
-function join() {
-  let name = document.getElementById("nameInput").value;
-  if (!name) return;
+async function join() {
+  const rawName = document.getElementById("nameInput").value.trim();
+  if (!rawName) return;
 
-  const userId = normalize(name);
-  const cleanName = name.trim();
+  const userId    = normalize(rawName);
+  const cleanName = rawName;
 
-  // 🔥 reconnect if socket is dead
-  if (!socket.connected) {
-    socket.connect();
+  let jwtToken;
+  try {
+    // Server signs the JWT — avoids crypto.subtle which requires HTTPS
+    const res = await fetch("/auth/token", {
+      method:  "POST",
+      headers: { "Content-Type": "application/json" },
+      body:    JSON.stringify({ userId, name: cleanName })
+    });
+    if (!res.ok) throw new Error("Token request failed: " + res.status);
+    const data = await res.json();
+    if (!data.token) throw new Error(data.error || "No token returned");
+    jwtToken = data.token;
+  } catch (err) {
+    console.error("Token fetch failed:", err);
+    alert("Login failed: " + err.message);
+    return;
   }
 
-  socket.emit("register", { userId, name: cleanName }, (res) => {
-    if (!res || res.error) {
-      alert(res?.error || "Login failed");
-      return;
-    }
+  sessionStorage.setItem("testJwtToken", jwtToken);
 
-    currentUser = res.userId;
-    sessionStorage.setItem("currentUser", currentUser);
-    
-    const keys = generateMockKeys();
-    socket.emit("register_keys", {
-      identityPublicKey: keys.identityPublicKey,
-      signedPreKey: keys.signedPreKey,
-      signature: keys.signedPreKeySignature,
-      oneTimePreKeys: keys.oneTimePreKeys,
-      overwrite: true
-    }, () => {
-      showScreen("userScreen");
-      socket.emit("get_users");
+  // Attach token to handshake auth BEFORE connecting
+  socket.auth = { token: jwtToken };
+
+  if (socket.connected) {
+    socket.disconnect();
+  }
+
+  socket.connect();
+
+  socket.once("connect", () => {
+    socket.emit("register", {}, (res) => {
+      if (!res || res.error) {
+        alert(res?.error || "Login failed");
+        return;
+      }
+
+      currentUser = res.userId;
+      sessionStorage.setItem("currentUser", currentUser);
+
+      const keys = generateMockKeys();
+      socket.emit("register_keys", {
+        identityPublicKey: keys.identityPublicKey,
+        signedPreKey:      keys.signedPreKey,
+        signature:         keys.signedPreKeySignature,
+        oneTimePreKeys:    keys.oneTimePreKeys,
+        overwrite:         true
+      }, () => {
+        showScreen("userScreen");
+        socket.emit("get_users");
+      });
     });
   });
 }
@@ -744,10 +790,8 @@ function createUserItem(user, isOnline) {
 // ================= SESSIONS =================
 function loadSessions() {
   if (!currentUser || !currentChatUser) return;
-
-  socket.emit("get_sessions", {
-    userId: currentUser
-  });
+  // No payload needed — server uses socket.data.userId
+  socket.emit("get_sessions");
 }
 
 function startSessionRefresh() {
@@ -898,8 +942,8 @@ function createSessionItem(session) {
 function createNewSession() {
   if (!currentUser || !currentChatUser) return;
 
+  // "from" is intentionally omitted — server uses socket.data.userId
   socket.emit("create_session", {
-    from: currentUser,
     to: currentChatUser
   }, (session) => {
     const sessionId = getSessionId(session || {});
@@ -956,9 +1000,9 @@ function attachChatInputListeners() {
   input.oninput = function () {
     if (!currentChatUser || !currentSessionId) return;
 
+    // "from" is intentionally omitted — server uses socket.data.userId
     socket.emit("typing_start", {
-      from: currentUser,
-      to: currentChatUser,
+      to:        currentChatUser,
       sessionId: currentSessionId,
     });
 
@@ -966,8 +1010,7 @@ function attachChatInputListeners() {
 
     typingTimeout = setTimeout(() => {
       socket.emit("typing_stop", {
-        from: currentUser,
-        to: currentChatUser,
+        to:        currentChatUser,
         sessionId: currentSessionId,
       });
     }, 1000);
@@ -1430,6 +1473,15 @@ window.onpopstate = function (event) {
 
 window.onload = () => {
   history.replaceState({ screen: "loginScreen" }, "", "#loginScreen");
+
+  // Auto-reconnect on page refresh if a session exists
+  const storedUser = sessionStorage.getItem("currentUser");
+  const storedToken = sessionStorage.getItem("testJwtToken");
+  if (storedUser && storedToken) {
+    // In production, the main app would supply a fresh JWT here
+    socket.auth = { token: storedToken };
+    socket.connect();
+  }
 };
 
 </script>

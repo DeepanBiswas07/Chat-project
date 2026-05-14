@@ -23,7 +23,7 @@ async function getAllSessionsForUser(userId) {
   return Session.find({ participants: userId }).lean();
 }
 
-async function upsertSession(sessionId, fromId, toId, encryptedLastMessage, isNewMessage) {
+async function createOrUpdateSession(sessionId, fromId, toId, encryptedLastMessage, isNewMessage) {
   const update = {
     $set: {
       encryptedLastMessage,
@@ -55,6 +55,6 @@ module.exports = {
   deleteEmptySessions,
   getSessionsByUser,
   getAllSessionsForUser,
-  upsertSession,
+  createOrUpdateSession,
   resetUnread,
 };

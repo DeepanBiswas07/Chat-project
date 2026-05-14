@@ -1,30 +1,40 @@
-const { v4: uuidv4 } = require("uuid");
+"use strict";
+
+const { v4: uuidv4 }     = require("uuid");
+const { generalLimiter } = require("../../middleware/socketRateLimit");
 
 module.exports = function registerSessionHandler(socket, io, helpers) {
   const { sendSessionList } = helpers;
 
-  // ================= GET SESSIONS =================
   socket.on("get_sessions", async () => {
-    const id = socket.data.userId;
-    if (!id) return;
-
-    await sendSessionList(socket, id);
+    try {
+      if (!generalLimiter(socket)) return;
+      const id = socket.data.userId;
+      if (!id) return;
+      await sendSessionList(socket, id);
+    } catch (err) {
+      console.error("get_sessions error:", err);
+    }
   });
 
-  // ================= CREATE SESSION =================
-  socket.on("create_session", async ({ to }, ack) => {
-    const fromId = socket.data.userId;
-    const toId = String(to || "").trim().toLowerCase();
+  socket.on("create_session", async (payload, ack) => {
+    try {
+      const fromId = socket.data.userId;
+      const raw    = payload && typeof payload === "object" ? payload : {};
+      const toId   = String(raw.to || "").trim().toLowerCase();
 
-    if (!fromId || !toId) return;
+      if (!fromId || !toId) return;
+      if (fromId === toId) { ack && ack({ error: "Cannot create session with yourself" }); return; }
 
-    const session = {
-      sessionId: uuidv4(),
-      participants: [fromId, toId],
-      createdBy: fromId,
-      createdAt: new Date(),
-    };
-
-    ack && ack(session);
+      ack && ack({
+        sessionId:    uuidv4(),
+        participants: [fromId, toId],
+        createdBy:    fromId,
+        createdAt:    new Date(),
+      });
+    } catch (err) {
+      console.error("create_session error:", err);
+      ack && ack({ error: "Server error" });
+    }
   });
 };

@@ -1,40 +1,35 @@
-const { addUser, getUser, removeUser } = require("../../store/onlineUsers");
-const { createOrUpdateUser } = require("../../services/user");
-const { getPendingMessages, updateMessageStatus } = require("../../services/message");
+"use strict";
+
+const { addUser, getUser, removeUser }                    = require("../../store/onlineUsers");
+const { createOrUpdateUser }                              = require("../../services/user");
+const { getPendingMessages, updateMessageStatus }         = require("../../services/message");
 
 module.exports = function registerAuthHandler(socket, io, helpers) {
   const { sendUserListToAll, sendSessionList } = helpers;
 
-  // ================= REGISTER =================
-  socket.on("register", async ({ name }, ack) => {
+  socket.on("register", async (_payload, ack) => {
     try {
-      const cleanName = String(name || "").trim();
-      const id = cleanName.toLowerCase();
+      // identity comes from socket.data, set during handshake — never from payload
+      const id        = socket.data.userId;
+      const cleanName = socket.data.name;
 
       if (!id || !cleanName) {
-        ack && ack({ error: "Invalid name" });
+        ack && ack({ error: "Unauthorized" });
         return;
       }
 
-      const existingUser = getUser(id);
-      if (existingUser) {
-        if (existingUser.socketId === socket.id) {
-          // Same socket registered twice — shouldn't happen but guard it
-          ack && ack({ error: "User already logged in" });
+      const existing = getUser(id);
+      if (existing) {
+        if (existing.socketId === socket.id) {
+          ack && ack({ error: "Already registered" });
           return;
         }
-        // Different socket = reconnect: evict old entry so new socket takes over
         removeUser(id);
-        console.log(`🔄 ${cleanName} reconnected (evicted old socket)`);
+        console.log(`🔄 ${cleanName} reconnected`);
       }
 
-      socket.data.userId = id;
-      socket.data.name = cleanName;
-
       addUser(id, socket.id, cleanName);
-
       await createOrUpdateUser(id, cleanName);
-
       console.log(`👤 ${cleanName} (${id})`);
 
       ack && ack({ userId: id, name: cleanName });
@@ -44,22 +39,20 @@ module.exports = function registerAuthHandler(socket, io, helpers) {
           await sendUserListToAll();
           await sendSessionList(socket, id);
 
-          const pendingMessages = await getPendingMessages(id);
-
-          for (const msg of pendingMessages) {
+          const pending = await getPendingMessages(id);
+          for (const msg of pending) {
             await updateMessageStatus(msg._id, "delivered", "deliveredAt");
-
             const sender = getUser(msg.senderId);
             if (sender) {
               io.to(sender.socketId).emit("message_status", {
                 messageId: msg.messageId,
-                clientId: msg.clientId,
-                status: "delivered",
+                clientId:  msg.clientId,
+                status:    "delivered",
               });
             }
           }
         } catch (err) {
-          console.error("Post-login async error:", err);
+          console.error("Post-register error:", err);
         }
       })();
     } catch (err) {
@@ -68,17 +61,13 @@ module.exports = function registerAuthHandler(socket, io, helpers) {
     }
   });
 
-  // ================= LOGOUT =================
   socket.on("logout", async () => {
     try {
       const userId = socket.data.userId;
       if (!userId) return;
-
       removeUser(userId);
       socket.data.userId = null;
-
       console.log(`🚪 Logout: ${userId}`);
-
       await sendUserListToAll();
     } catch (err) {
       console.error("logout error:", err);
