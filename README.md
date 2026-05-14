@@ -34,8 +34,8 @@ A production-ready Node.js + Express + Socket.IO + MongoDB encrypted messaging b
 ### 1. Clone
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/YOUR_REPO.git
-cd YOUR_REPO
+git clone https://github.com/DeepanBiswas07/Chat-project.git
+cd Chat-project
 ```
 
 ### 2. Install dependencies
@@ -47,7 +47,11 @@ npm install
 ### 3. Configure environment
 
 ```bash
+# Linux / macOS
 cp .env.example .env
+
+# Windows
+copy .env.example .env
 ```
 
 Open `.env` and fill in **every value** — especially these three:
