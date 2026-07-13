@@ -1,0 +1,1438 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Chat UI</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <style>
+    body {
+      margin: 0;
+      font-family: Arial;
+      background: #0b141a;
+      color: white;
+    }
+
+    .app {
+      max-width: 400px;
+      height: 100vh;
+      min-height: 100vh;
+      margin: auto;
+      display: flex;
+      flex-direction: column;
+    }
+html, body {
+  height: 100%;
+}
+
+    .screen {
+      display: none;
+      flex-direction: column;
+      height: 100%;
+    }
+
+    .active {
+      display: flex;
+    }
+
+    .center {
+      justify-content: center;
+      align-items: center;
+      gap: 10px;
+    }
+
+    input {
+      padding: 10px;
+      width: 80%;
+    }
+
+    #messageInput {
+      resize: none;
+      border: none;
+      outline: none;
+      font-family: inherit;
+    }
+
+    button {
+      padding: 10px;
+      background: #00a884;
+      border: none;
+      color: white;
+      cursor: pointer;
+    }
+
+    .header {
+      padding: 10px;
+      background: #202c33;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .header-left {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .back-btn {
+      cursor: pointer;
+      font-size: 18px;
+    }
+
+    .logout-btn {
+      cursor: pointer;
+      font-size: 14px;
+      color: #ff6b6b;
+    }
+
+    .new-chat-btn {
+      cursor: pointer;
+      font-size: 14px;
+      color: white;
+      background: #00a884;
+      padding: 8px 10px;
+      border-radius: 6px;
+    }
+
+    .users {
+      flex: 1;
+      overflow-y: auto;
+      padding: 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .section-title {
+      font-size: 12px;
+      color: #8696a0;
+      margin-top: 10px;
+      margin-bottom: 4px;
+    }
+
+    .user {
+      padding: 10px;
+      background: #2a3942;
+      border-radius: 10px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .user:hover {
+      background: #334b57;
+    }
+
+    .session {
+      align-items: flex-start;
+      gap: 8px;
+    }
+
+    .session-main {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .session-message {
+  font-size: 14px;
+  color: #d1d7db;
+
+  display: -webkit-box;
+  -webkit-line-clamp: 2;     
+  -webkit-box-orient: vertical;
+
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+    .session-time {
+      font-size: 11px;
+      color: #8696a0;
+      white-space: nowrap;
+      margin-top: 2px;
+    }
+
+    .session-unread {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-top: 2px;
+    }
+
+    .unread-badge {
+      min-width: 16px;
+      height: 16px;
+      padding: 0 5px;
+      border-radius: 9px;
+      background: #00ff88;
+      color: #0b141a;
+      font-size: 11px;
+      line-height: 16px;
+      text-align: center;
+      font-weight: bold;
+    }
+
+    .empty-state {
+      color: #8696a0;
+      text-align: center;
+      margin-top: 30px;
+      font-size: 14px;
+    }
+
+    .user-left {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+    }
+
+    .online {
+      background: #00ff88;
+    }
+
+    .offline {
+      background: gray;
+    }
+
+    .chat {
+  flex: 1;
+  overflow-y: auto;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+}
+
+.msg-row {
+  display: flex;
+  flex-direction: column;
+  max-width: 65%;
+  margin: 8px 0;   
+}
+
+.msg-row.sent {
+  align-self: flex-end;
+  align-items: flex-end;
+}
+
+.msg-row.received {
+  align-self: flex-start;
+  align-items: flex-start;
+}
+
+.msg-bubble {
+  padding: 6px 10px;   
+  border-radius: 12px; 
+  white-space: pre-wrap;
+  word-break: break-word;
+
+  line-height: 1.3;   
+  font-size: 14px;
+
+  display: inline-block;
+}
+
+.msg-row.sent .msg-bubble {
+  background: #005c4b;
+}
+
+.msg-row.received .msg-bubble {
+  background: #202c33;
+}
+
+.status {
+  margin-top: 4px;
+  font-size: 10px;
+  color: #aaa;
+
+  display: flex;
+  justify-content: flex-end;
+  gap: 4px;
+}
+  
+
+    .input {
+  display: flex;
+  padding: 8px;
+  background: #202c33;
+  gap: 6px;
+}
+
+#messageInput {
+  flex: 1;
+  padding: 8px;
+  border: none;
+  outline: none;
+  resize: none;
+  font-family: inherit;
+  border-radius: 6px;
+  height: 36px;          
+  box-sizing: border-box;
+}
+
+.input button {
+  padding: 0 14px;
+  height: 36px;
+  border-radius: 6px;
+  white-space: nowrap;
+}
+  </style>
+</head>
+
+<body>
+
+<div class="app">
+
+  <!-- LOGIN -->
+  <div id="loginScreen" class="screen active center">
+    <h2>Enter Your Name</h2>
+    <input id="nameInput" placeholder="Your name">
+    <button onclick="join()">Continue</button>
+  </div>
+
+  <!-- USER LIST -->
+  <div id="userScreen" class="screen">
+    <div class="header">
+      <div>Chats</div>
+      <div class="logout-btn" onclick="logout()">Logout</div>
+    </div>
+
+    <div class="users" id="users"></div>
+  </div>
+
+  <!-- SESSION LIST -->
+  <div id="sessionScreen" class="screen">
+    <div class="header">
+      <div class="header-left">
+        <div class="back-btn" onclick="backToUsers()">←</div>
+        <div id="sessionHeader"></div>
+      </div>
+      <div class="new-chat-btn" onclick="createNewSession()">+ New Chat</div>
+    </div>
+
+    <div class="users" id="sessions"></div>
+  </div>
+
+  <!-- CHAT -->
+  <div id="chatScreen" class="screen">
+    <div class="header">
+      <div class="header-left">
+        <div class="back-btn" onclick="goBack()">←</div>
+        <div id="chatHeader"></div>
+      </div>
+    </div>
+
+    <div class="chat" id="chat"></div>
+    <div id="typingIndicator" style="padding:5px; font-size:12px; color:#aaa;"></div>
+
+    <div class="input">
+      <textarea id="messageInput" placeholder="message" rows="1"></textarea>
+      <button onclick="sendMessage()">Send</button>
+    </div>
+  </div>
+
+</div>
+
+<script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+
+<script>
+function utf8ToBase64(str) {
+  const bytes = new TextEncoder().encode(str);
+  let binary = "";
+  bytes.forEach(b => binary += String.fromCharCode(b));
+  return btoa(binary);
+}
+
+function base64ToUtf8(base64) {
+  const binary = atob(base64);
+  const bytes = Uint8Array.from(binary, c => c.charCodeAt(0));
+  return new TextDecoder().decode(bytes);
+}
+
+function mockEncrypt(text) {
+  return {
+    encryptedmessage: utf8ToBase64(text),
+    nonce: utf8ToBase64("n-" + Date.now()),
+    header: ""
+  };
+}
+
+function mockDecrypt(encryptedmessage) {
+  try {
+    return base64ToUtf8(encryptedmessage);
+  } catch (err) {
+    console.error("Decrypt error:", err);
+    return "[decrypt error]";
+  }
+}
+
+function generateMockKeys() {
+  return {
+    identityPublicKey: btoa("identity-" + Date.now()),
+    signedPreKey: btoa("signed-" + Date.now()),
+    signedPreKeySignature: btoa("sig-" + Date.now()),
+    oneTimePreKeys: [
+      { keyId: Date.now().toString(), publicKey: btoa("otp-" + Date.now()) }
+    ]
+  };
+}
+
+let socket = io("http://192.168.29.93:3000", {
+  autoConnect: true,
+  reconnection: true,
+  reconnectionAttempts: Infinity,
+  reconnectionDelay: 1000,
+  reconnectionDelayMax: 5000,
+  timeout: 20000
+});
+
+function initializeAfterConnect() {
+  console.log("currentUser:", currentUser);
+  console.log("socket.connected:", socket.connected);
+
+  if (!currentUser) {
+    console.log("No user yet, skipping init");
+    return;
+  }
+
+  console.log("Initializing user after connect:", currentUser);
+
+  socket.emit("register", { name: currentUser }, (res) => {
+    const ok = res && !res.error;
+    // Also treat "already logged in" as success — belt-and-suspenders
+    // for the race where old socket isn't cleaned up yet
+    const alreadyOnline = res && res.error === "User already logged in";
+
+    if (ok || alreadyOnline) {
+      if (ok) console.log("Registered:", res.userId);
+      if (alreadyOnline) console.log("Already registered — syncing state anyway");
+
+      socket.emit("get_users");
+      socket.emit("get_sessions", { userId: currentUser });
+
+      if (currentSessionId) {
+        setTimeout(() => {
+
+          socket.emit("load_messages", {
+            sessionId: currentSessionId,
+            user1: currentUser,
+            user2: currentChatUser
+          });
+
+        }, 500);
+      }
+
+      resendQueuedMessages();
+
+      // Restore navigation + header text after auto-login on refresh
+      if (activeScreen === "loginScreen") {
+        const headerName = currentChatUserName || currentChatUser || "";
+        if (currentSessionId) {
+          const chatHeaderEl = document.getElementById("chatHeader");
+          const sessionHeaderEl = document.getElementById("sessionHeader");
+          if (chatHeaderEl) chatHeaderEl.innerText = headerName;
+          if (sessionHeaderEl) sessionHeaderEl.innerText = headerName;
+          showScreen("chatScreen", false);
+          attachChatInputListeners();
+        } else if (currentChatUser) {
+          const sessionHeaderEl = document.getElementById("sessionHeader");
+          if (sessionHeaderEl) sessionHeaderEl.innerText = headerName;
+          showScreen("sessionScreen", false);
+        } else {
+          showScreen("userScreen", false);
+        }
+      }
+    } else {
+      console.error("Register failed", res);
+    }
+  });
+}
+
+// ================= SOCKET LIFECYCLE =================
+
+socket.on("disconnect", () => {
+  isReconnecting = true;
+  console.log("Socket disconnected");
+  
+  // Clear local online cache
+  currentUserList.forEach(u => u.online = false);
+  renderUserList();
+
+  setTimeout(() => {
+    socket.emit("get_users");
+  }, 300);
+});
+
+socket.on("connect", () => {
+
+  console.log("Connected:", socket.id);
+  console.log("Socket connected");
+
+  setTimeout(() => {
+    socket.emit("get_users");
+  }, 500);
+
+  setTimeout(() => {
+    initializeAfterConnect();
+
+    // reconnect complete AFTER state sync delay
+    setTimeout(() => {
+      isReconnecting = false;
+      console.log("Reconnect sync complete");
+    }, 1500);
+
+  }, 300);
+
+});
+
+socket.io.on("reconnect_attempt", () => {
+  console.log("RECONNECTING...");
+});
+
+function resendQueuedMessages() {
+  if (!socket.connected) return;
+  if (messageQueue.length === 0) return;
+
+  console.log("Resending queued messages:", messageQueue.length);
+
+  // Snapshot the queue — new items can be added while we iterate
+  const snapshot = [...messageQueue];
+
+  snapshot.forEach(msg => {
+    socket.emit("send_message", msg, (serverMsg) => {
+      if (serverMsg && !serverMsg.error) {
+        // Remove from queue on success
+        messageQueue = messageQueue.filter(m => m.clientId !== msg.clientId);
+        saveQueue();
+
+        updateLocalMessageStatus({
+          clientId: msg.clientId,
+          messageId: serverMsg.messageId,
+          status: serverMsg.status || "sent"
+        });
+
+        // Re-render chat if this message belongs to current session
+        if (activeScreen === "chatScreen") {
+          const chat = document.getElementById("chat");
+          chat.innerHTML = "";
+          allMessages
+            .filter(m => m.sessionId === currentSessionId)
+            .sort((a, b) => new Date(a.createdAt || 0) - new Date(b.createdAt || 0))
+            .forEach(renderMessage);
+        }
+      } else {
+        console.warn("Queued message failed to send:", serverMsg?.error, "— will retry on next reconnect");
+      }
+    });
+  });
+}
+
+let messageQueue = JSON.parse(localStorage.getItem("messageQueue") || "[]");
+
+function saveQueue() {
+  localStorage.setItem("messageQueue", JSON.stringify(messageQueue));
+}
+
+if (messageQueue.length > 0) {
+  console.log("Loaded queued messages:", messageQueue.length);
+}
+
+// Restore user from previous session within the same tab (sessionStorage survives
+// page refresh but is cleared when the tab is closed, preventing cross-tab conflicts)
+let currentUser = sessionStorage.getItem("currentUser") || null;
+let currentChatUser = sessionStorage.getItem("currentChatUser") || null;
+let currentChatUserName = sessionStorage.getItem("currentChatUserName") || null;
+let currentSessionId = sessionStorage.getItem("currentSessionId") || null;
+let currentSessions = [];
+let allMessages = [];
+
+// Inject queued messages into allMessages so they survive reload
+if (messageQueue.length > 0) {
+  messageQueue.forEach(msg => {
+    allMessages.push({
+      ...msg,
+      status: "waiting",
+      // UI needs text and timestamps to render
+      text: msg._text,
+      createdAt: msg._createdAt
+    });
+  });
+}
+
+let currentUserList = [];
+let activeScreen = "loginScreen";
+let typingState = {};
+let typingTimeout = null;
+let sessionRefreshTimer = null;
+let isReconnecting = false;
+
+// ================= NORMALIZE =================
+function normalize(str) {
+  return str.trim().toLowerCase();
+}
+
+// ================= SCREEN =================
+function showScreen(id, push = true) {
+  document.querySelectorAll(".screen").forEach(s => s.classList.remove("active"));
+  document.getElementById(id).classList.add("active");
+  activeScreen = id;
+
+  if (id === "sessionScreen") {
+    renderSessions();
+    startSessionRefresh();
+  } else {
+    stopSessionRefresh();
+  }
+
+  if (push) {
+    history.pushState({ screen: id }, "", "#" + id);
+  }
+}
+
+// ================= JOIN =================
+function join() {
+  let name = document.getElementById("nameInput").value;
+  if (!name) return;
+
+  const userId = normalize(name);
+  const cleanName = name.trim();
+
+  // 🔥 reconnect if socket is dead
+  if (!socket.connected) {
+    socket.connect();
+  }
+
+  socket.emit("register", { userId, name: cleanName }, (res) => {
+    if (!res || res.error) {
+      alert(res?.error || "Login failed");
+      return;
+    }
+
+    currentUser = res.userId;
+    sessionStorage.setItem("currentUser", currentUser);
+    
+    const keys = generateMockKeys();
+    socket.emit("register_keys", {
+      identityPublicKey: keys.identityPublicKey,
+      signedPreKey: keys.signedPreKey,
+      signature: keys.signedPreKeySignature,
+      oneTimePreKeys: keys.oneTimePreKeys,
+      overwrite: true
+    }, () => {
+      showScreen("userScreen");
+      socket.emit("get_users");
+    });
+  });
+}
+
+// ================= LOGOUT =================
+function logout() {
+  if (currentUser) {
+    socket.emit("logout");
+  }
+
+  socket.disconnect();
+
+  // Clear all persisted state on explicit logout
+  sessionStorage.clear();
+  localStorage.removeItem("messageQueue");
+}
+
+// ================= BACK =================
+function goBack() {
+  history.back();
+}
+
+function backToUsers() {
+  history.back();
+}
+
+// ================= USERS =================
+socket.on("user_list", (list) => {
+  currentUserList = Array.isArray(list) ? list : [];
+  renderUserList();
+});
+
+function renderUserList() {
+  const usersDiv = document.getElementById("users");
+  usersDiv.innerHTML = "";
+
+  const onlineUsers = currentUserList.filter(u => u.online && u.userId !== currentUser);
+  const offlineUsers = currentUserList.filter(u => !u.online && u.userId !== currentUser);
+
+  if (onlineUsers.length > 0) {
+    const title = document.createElement("div");
+    title.className = "section-title";
+    title.innerText = "ONLINE";
+    usersDiv.appendChild(title);
+
+    onlineUsers.forEach(u => {
+      usersDiv.appendChild(createUserItem(u, true));
+    });
+  }
+
+  if (offlineUsers.length > 0) {
+    const title = document.createElement("div");
+    title.className = "section-title";
+    title.innerText = "OFFLINE";
+    usersDiv.appendChild(title);
+
+    offlineUsers.forEach(u => {
+      usersDiv.appendChild(createUserItem(u, false));
+    });
+  }
+}
+
+// ================= USER ITEM =================
+function createUserItem(user, isOnline) {
+  const div = document.createElement("div");
+  div.className = "user";
+  const unread = user.unreadCount || 0;
+
+  const left = document.createElement("div");
+  left.className = "user-left";
+
+  const dot = document.createElement("div");
+  dot.className = "dot " + (isOnline ? "online" : "offline");
+
+  const name = document.createElement("div");
+  name.innerText = user.name;
+
+  left.appendChild(dot);
+  left.appendChild(name);
+  div.appendChild(left);
+
+  if (unread > 0) {
+    const unreadWrap = document.createElement("div");
+    unreadWrap.className = "session-unread";
+
+    const unreadDot = document.createElement("div");
+    unreadDot.className = "dot online";
+
+    const badge = document.createElement("div");
+    badge.className = "unread-badge";
+    badge.innerText = unread;
+
+    unreadWrap.appendChild(unreadDot);
+    unreadWrap.appendChild(badge);
+    div.appendChild(unreadWrap);
+  }
+
+  div.onclick = () => {
+    currentChatUser = user.userId;
+    currentChatUserName = user.name;
+    currentSessionId = null;
+    sessionStorage.setItem("currentChatUser", currentChatUser);
+    sessionStorage.setItem("currentChatUserName", currentChatUserName);
+    sessionStorage.removeItem("currentSessionId");
+    document.getElementById("sessionHeader").innerText = user.name;
+    document.getElementById("chatHeader").innerText = user.name;
+    showScreen("sessionScreen");
+    loadSessions();
+  };
+
+  return div;
+}
+
+
+// ================= SESSIONS =================
+function loadSessions() {
+  if (!currentUser || !currentChatUser) return;
+
+  socket.emit("get_sessions", {
+    userId: currentUser
+  });
+}
+
+function startSessionRefresh() {
+  stopSessionRefresh();
+
+  sessionRefreshTimer = setInterval(() => {
+    if (activeScreen === "sessionScreen") {
+      loadSessions();
+    }
+  }, 1500);
+}
+
+function stopSessionRefresh() {
+  if (sessionRefreshTimer) {
+    clearInterval(sessionRefreshTimer);
+    sessionRefreshTimer = null;
+  }
+}
+
+socket.on("session_list", (list) => {
+  currentSessions = Array.isArray(list) ? list : [];
+  currentSessions.forEach(session => {
+    if (Array.isArray(session.messages)) {
+      mergeMessages(session.messages.map(msg => ({
+        ...msg,
+        sessionId: msg.sessionId || getSessionId(session)
+      })));
+    }
+  });
+  renderSessions();
+  renderUserList();
+});
+
+function renderSessions() {
+  const sessionsDiv = document.getElementById("sessions");
+  sessionsDiv.innerHTML = "";
+
+  const sessions = currentSessions
+    .filter(session => isCurrentChatSession(session))
+    .filter(session => hasMessages(session))
+    .sort((a, b) => getSessionTime(b) - getSessionTime(a));
+
+  if (sessions.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "empty-state";
+    empty.innerText = "No conversations yet";
+    sessionsDiv.appendChild(empty);
+    return;
+  }
+
+  sessions.forEach(session => {
+    sessionsDiv.appendChild(createSessionItem(session));
+  });
+}
+
+function isCurrentChatSession(session) {
+  if (!currentChatUser || !Array.isArray(session.participants)) return true;
+  return session.participants.includes(currentChatUser);
+}
+
+function hasMessages(session) {
+  if (Array.isArray(session.messages)) return session.messages.length > 0;
+  if (typeof session.messageCount === "number") return session.messageCount > 0;
+  if (typeof session.messagesCount === "number") return session.messagesCount > 0;
+  return !!(session.encryptedLastMessage && session.encryptedLastMessage.ciphertext);
+}
+
+function getSessionId(session) {
+  return session.sessionId || session._id || session.id;
+}
+
+function getSessionLastMessage(session) {
+  const enc = session.encryptedLastMessage;
+  if (!enc || !enc.ciphertext) return "";
+  try {
+    return mockDecrypt(enc.ciphertext);
+  } catch {
+    return "[encrypted]";
+  }
+}
+
+function getSessionTime(session) {
+  const value =
+    session.lastMessageAt ||
+    session.updatedAt ||
+    session.createdAt ||
+    (session.lastMessage && session.lastMessage.createdAt);
+
+  const time = value ? new Date(value).getTime() : 0;
+  return Number.isNaN(time) ? 0 : time;
+}
+
+function formatSessionTime(session) {
+  const time = getSessionTime(session);
+  if (!time) return "";
+
+  return new Date(time).toLocaleString([], {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit"
+  });
+}
+
+function createSessionItem(session) {
+  const div = document.createElement("div");
+  div.className = "user session";
+  const unreadCount = session.unreadCount || 0;
+
+  const main = document.createElement("div");
+  main.className = "session-main";
+
+  const message = document.createElement("div");
+  message.className = "session-message";
+  message.innerText = getSessionLastMessage(session);
+
+  const time = document.createElement("div");
+  time.className = "session-time";
+  time.innerText = formatSessionTime(session);
+
+  main.appendChild(message);
+  main.appendChild(time);
+  div.appendChild(main);
+
+  if (unreadCount > 0) {
+    const unread = document.createElement("div");
+    unread.className = "session-unread";
+
+    const dot = document.createElement("div");
+    dot.className = "dot online";
+
+    const badge = document.createElement("div");
+    badge.className = "unread-badge";
+    badge.innerText = unreadCount;
+
+    unread.appendChild(dot);
+    unread.appendChild(badge);
+    div.appendChild(unread);
+  }
+
+  div.onclick = () => openSession(getSessionId(session));
+
+  return div;
+}
+
+
+
+function createNewSession() {
+  if (!currentUser || !currentChatUser) return;
+
+  socket.emit("create_session", {
+    from: currentUser,
+    to: currentChatUser
+  }, (session) => {
+    const sessionId = getSessionId(session || {});
+    if (sessionId) openSession(sessionId);
+  });
+}
+
+function openSession(sessionId) {
+  if (!sessionId) return;
+
+  currentSessionId = sessionId;
+  sessionStorage.setItem("currentSessionId", currentSessionId);
+  typingState[sessionId] = false;
+  updateTypingUI();
+
+  document.getElementById("chatHeader").innerText =
+    currentChatUserName || currentChatUser;
+
+  document.getElementById("chat").innerHTML = "";
+
+setTimeout(() => {
+  const chat = document.getElementById("chat");
+  chat.scrollTop = chat.scrollHeight;
+}, 50);
+
+  showScreen("chatScreen");
+  attachChatInputListeners();
+
+  socket.emit("load_messages", {
+    sessionId,
+    user1: currentUser,
+    user2: currentChatUser
+  });
+
+  // Ensure session list stays up to date
+  loadSessions();
+}
+
+function attachChatInputListeners() {
+  const input = document.getElementById("messageInput");
+  if (!input) return;
+
+  // remove old handlers (important)
+  input.onkeydown = null;
+  input.oninput = null;
+
+  input.onkeydown = function (e) {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      sendMessage();
+    }
+  };
+
+  input.oninput = function () {
+    if (!currentChatUser || !currentSessionId) return;
+
+    socket.emit("typing_start", {
+      from: currentUser,
+      to: currentChatUser,
+      sessionId: currentSessionId,
+    });
+
+    clearTimeout(typingTimeout);
+
+    typingTimeout = setTimeout(() => {
+      socket.emit("typing_stop", {
+        from: currentUser,
+        to: currentChatUser,
+        sessionId: currentSessionId,
+      });
+    }, 1000);
+  };
+}
+
+// ================= CHAT =================
+socket.on("chat_history", (messages) => {
+  const chat = document.getElementById("chat");
+
+  const normalizedMessages = messages.map(msg => ({
+    ...msg,
+    sessionId: msg.sessionId || currentSessionId
+  }));
+
+  const mergedMessages = normalizedMessages.map(serverMsg => {
+
+    const localMsg = allMessages.find(m =>
+      (serverMsg.messageId && m.messageId === serverMsg.messageId) ||
+      (serverMsg.clientId && m.clientId === serverMsg.clientId)
+    );
+
+    // preserve ONLY waiting messages
+    if (
+      localMsg &&
+      localMsg.status === "waiting" &&
+      !serverMsg.status
+    ) {
+      return {
+        ...serverMsg,
+        status: "waiting"
+      };
+    }
+
+    // otherwise server ALWAYS wins
+    return {
+      ...localMsg,
+      ...serverMsg
+    };
+  });
+
+  const serverClientIds  = new Set(normalizedMessages.map(m => m.clientId).filter(Boolean));
+  const serverMessageIds = new Set(normalizedMessages.map(m => m.messageId).filter(Boolean));
+
+  // Keep "waiting" messages that aren't yet confirmed by server
+  const stillWaiting = allMessages.filter(m =>
+    m.sessionId === currentSessionId &&
+    m.status === "waiting" &&
+    !serverClientIds.has(m.clientId) &&
+    !serverMessageIds.has(m.messageId)
+  );
+
+  // Replace session messages with merged truth, preserving unconfirmed waiting ones
+  allMessages = [
+    ...allMessages.filter(m => m.sessionId !== currentSessionId),
+    ...mergedMessages,
+    ...stillWaiting
+  ];
+
+  chat.innerHTML = "";
+
+  allMessages
+    .filter(m => m.sessionId === currentSessionId)
+    .sort((a, b) => new Date(a.createdAt || a.sentAt || 0) - new Date(b.createdAt || b.sentAt || 0))
+    .forEach(renderMessage);
+
+  setTimeout(() => { chat.scrollTop = chat.scrollHeight; }, 0);
+
+  normalizedMessages.forEach(msg => {
+    if (shouldMarkMessageRead(msg)) {
+      markLocalMessageRead(msg);
+      socket.emit("message_read", { messageId: msg.messageId });
+    }
+  });
+
+  renderSessions();
+  renderUserList();
+});
+
+// ================= RECEIVE =================
+socket.on("receive_message", (msg) => {
+  const normalizedMsg = {
+    ...msg,
+    sessionId: msg.sessionId || msg.session
+  };
+
+  mergeMessages([normalizedMsg]);
+
+if (activeScreen === "chatScreen" && normalizedMsg.sessionId === currentSessionId) {
+  const chat = document.getElementById("chat");
+  chat.innerHTML = "";
+
+  allMessages
+    .filter(m => m.sessionId === currentSessionId)
+    .forEach(renderMessage);
+}
+
+if (shouldMarkMessageRead(normalizedMsg)) {
+  markLocalMessageRead(normalizedMsg);
+  socket.emit("message_read", { messageId: normalizedMsg.messageId });
+}
+
+  renderUserList();
+});
+
+socket.on("typing_start", ({ from, sessionId }) => {
+  if (sessionId !== currentSessionId) return;
+
+  typingState[sessionId] = true;
+  updateTypingUI();
+});
+
+socket.on("typing_stop", ({ from, sessionId }) => {
+  if (sessionId !== currentSessionId) return;
+
+  typingState[sessionId] = false;
+  updateTypingUI();
+});
+
+// ================= STATUS =================
+socket.on("message_status", ({ clientId, messageId, status }) => {
+  // Remove from queue if it was delivered or read
+  if (["sent", "delivered", "read"].includes(status)) {
+    messageQueue = messageQueue.filter(m => m.clientId !== clientId);
+    saveQueue();
+  }
+
+  if (isReconnecting) {
+    console.log("Delaying status update during reconnect");
+  }
+
+  // update state
+  updateLocalMessageStatus({ clientId, messageId, status });
+
+  const chat = document.getElementById("chat");
+
+  if (chat && activeScreen === "chatScreen") {
+
+    chat.innerHTML = "";
+
+    allMessages
+      .filter(m => m.sessionId === currentSessionId)
+      .sort((a, b) =>
+        new Date(a.createdAt || 0) -
+        new Date(b.createdAt || 0)
+      )
+      .forEach(renderMessage);
+  }
+
+  renderSessions();
+  renderUserList();
+});
+// ================= SEND =================
+function sendMessage() {
+  console.log("Socket connected?", socket.connected);
+
+  const text = document.getElementById("messageInput").value;
+  if (!text.trim() || !currentChatUser || !currentSessionId) return;
+
+  const clientId = Date.now().toString();
+
+  const now = new Date().toISOString();
+
+const localMessage = {
+  senderId: currentUser,
+  receiverId: currentChatUser,
+  text,
+  clientId,
+  sessionId: currentSessionId,
+  status: socket.connected ? "sent" : "waiting",
+  createdAt: now,
+  sentAt: now
+};
+
+mergeMessages([localMessage]);
+
+const chat = document.getElementById("chat");
+chat.innerHTML = "";
+
+allMessages
+  .filter(m => m.sessionId === currentSessionId)
+  .sort((a, b) => new Date(a.createdAt || 0) - new Date(b.createdAt || 0))
+  .forEach(renderMessage);
+
+  let enc;
+
+  try {
+    enc = mockEncrypt(text);
+  } catch (err) {
+    console.error("Encryption failed:", err);
+    alert("Failed to encrypt message");
+    return;
+  }
+
+  if (!socket.connected) {
+    const queuedMsg = {
+      to: currentChatUser,
+      sessionId: currentSessionId,
+      encryptedmessage: enc.encryptedmessage,
+      nonce: enc.nonce,
+      header: enc.header,
+      clientId,
+      _text: text, // So we can render it after reload
+      _createdAt: now
+    };
+
+    if (!messageQueue.find(m => m.clientId === clientId)) {
+      messageQueue.push(queuedMsg);
+      saveQueue();
+    }
+    document.getElementById("messageInput").value = "";
+    return;
+  }
+
+  socket.emit("send_message", {
+    to: currentChatUser,
+    sessionId: currentSessionId,
+    encryptedmessage: enc.encryptedmessage,
+    nonce: enc.nonce,
+    header: enc.header,
+    clientId,
+  }, (serverMsg) => {
+  // 🔥 immediate status sync fallback
+  if (serverMsg) {
+    messageQueue = messageQueue.filter(m => m.clientId !== clientId);
+    saveQueue();
+
+    updateLocalMessageStatus({
+      clientId,
+      messageId: serverMsg.messageId,
+      status: serverMsg.status || "sent"
+    });
+  }
+});
+
+allMessages.sort((a, b) => {
+  const t1 = new Date(a.createdAt || a.sentAt || 0).getTime();
+  const t2 = new Date(b.createdAt || b.sentAt || 0).getTime();
+  return t1 - t2;
+});
+
+  document.getElementById("messageInput").value = "";
+}
+
+
+
+function shouldMarkMessageRead(msg) {
+  return (
+    activeScreen === "chatScreen" &&
+    currentSessionId &&
+    msg.sessionId === currentSessionId &&
+    msg.receiverId === currentUser &&
+    msg.status !== "read"
+  );
+}
+
+function getMessageKey(msg) {
+  return msg.messageId || msg.clientId;
+}
+
+const STATUS_PRIORITY = {
+  waiting: 0,
+  sent: 1,
+  delivered: 2,
+  read: 3
+};
+
+function mergeMessages(messages, replaceSessionId) {
+  // We no longer filter out allMessages by replaceSessionId 
+  // so that "waiting" messages are not wiped out.
+
+  messages.forEach(msg => {
+    const key = getMessageKey(msg);
+
+    if (!key) {
+      allMessages.push(msg);
+      return;
+    }
+
+    const index = allMessages.findIndex(existing =>
+  (msg.messageId && existing.messageId === msg.messageId) ||
+  (msg.clientId && existing.clientId === msg.clientId)
+);
+
+    if (index >= 0) {
+      allMessages[index] = { ...allMessages[index], ...msg };
+    } else {
+      allMessages.push(msg);
+    }
+  });
+}
+
+function markLocalMessageRead(msg) {
+  updateLocalMessageStatus({
+    clientId: msg.clientId,
+    messageId: msg.messageId,
+    status: "read"
+  });
+}
+
+function updateLocalMessageStatus({ clientId, messageId, status }) {
+  allMessages = allMessages.map(msg => {
+
+    const sameClient =
+      clientId &&
+      msg.clientId === clientId;
+
+    const sameMessage =
+      messageId &&
+      msg.messageId === messageId;
+
+    if (!sameClient && !sameMessage) {
+      return msg;
+    }
+
+    // Server is authoritative after reconnect.
+    // Only block downgrades from read.
+    if (
+      msg.status === "read" &&
+      status !== "read"
+    ) {
+      return msg;
+    }
+
+    const updated = {
+      ...msg,
+      status
+    };
+
+    if (messageId && !msg.messageId) {
+      updated.messageId = messageId;
+    }
+
+    if (status === "delivered" && !msg.deliveredAt) {
+      updated.deliveredAt = new Date().toISOString();
+    }
+
+    if (status === "read" && !msg.readAt) {
+      updated.readAt = new Date().toISOString();
+    }
+
+    return updated;
+  });
+}
+
+// ================= ICON =================
+function getStatusIcon(status) {
+  if (status === "waiting")   return "🕐";
+  if (status === "sent")      return "✓";
+  if (status === "delivered") return "✓✓";
+  if (status === "read")      return "👁";
+  return "";
+}
+
+// ================= TYPING UI =================
+function updateTypingUI() {
+  const el = document.getElementById("typingIndicator");
+
+  if (!el) return;
+
+  if (typingState[currentSessionId]) {
+    const name = currentChatUserName || "User";
+    el.innerText = name + " is typing...";
+  } else {
+    el.innerText = "";
+  }
+}
+
+function formatTime(dateString) {
+  if (!dateString) return "";
+
+  const date = new Date(dateString);
+
+  return date.toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit"
+  });
+}
+
+
+// ================= RENDER =================
+function renderMessage(msg) {
+  if (!msg.text && !msg.encryptedmessage) return;
+
+  const chat = document.getElementById("chat");
+  const isMine = msg.senderId === currentUser;
+  
+  const row = document.createElement("div");
+  row.className = "msg-row " + (isMine ? "sent" : "received");
+
+  const bubble = document.createElement("div");
+  bubble.className = "msg-bubble";
+
+  const text = document.createElement("span");
+  text.className = "text";
+  const displayText = msg.encryptedmessage
+    ? mockDecrypt(msg.encryptedmessage)
+    : msg.text;
+  text.textContent = displayText;
+
+  const meta = document.createElement("div");
+  meta.className = "status";
+
+  const time = document.createElement("span");
+  time.className = "time";
+  const timeValue = msg.createdAt || msg.sentAt || new Date().toISOString();
+  time.textContent = formatTime(timeValue);
+
+  const tick = document.createElement("span");
+  tick.className = "tick";
+  tick.textContent = isMine ? getStatusIcon(msg.status) : "";
+
+  row.dataset.id = msg.clientId || "";
+  row.dataset.msg = msg.messageId || "";
+
+  // 🔥 ORDER: TIME FIRST, THEN STATUS
+  meta.appendChild(time);
+  meta.appendChild(tick);
+
+  bubble.appendChild(text);
+  bubble.appendChild(meta);
+
+  row.appendChild(bubble);
+
+  chat.appendChild(row);
+  chat.scrollTop = chat.scrollHeight;
+}
+
+const nameInput = document.getElementById("nameInput");
+
+nameInput.addEventListener("keydown", function (e) {
+  if (e.key === "Enter") {
+    e.preventDefault();
+    join();
+  }
+});
+
+window.onpopstate = function (event) {
+  const target = event.state?.screen || "loginScreen";
+
+  // 🔥 if going back to login → FULL LOGOUT
+  if (target === "loginScreen" && currentUser) {
+    socket.emit("logout");
+
+    socket.disconnect();
+
+    currentUser = null;
+    currentChatUser = null;
+    currentChatUserName = null;
+    currentSessionId = null;
+    currentSessions = [];
+    allMessages = [];
+    currentUserList = [];
+
+    document.getElementById("nameInput").value = "";
+  }
+
+  showScreen(target, false);
+};
+
+window.onload = () => {
+  history.replaceState({ screen: "loginScreen" }, "", "#loginScreen");
+};
+
+</script>
+
+</body>
+</html>
